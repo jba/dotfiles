@@ -65,55 +65,6 @@
 
 (setq-default fill-column 79)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Google-specific.
-
-(require 'google)
-
-;(load-file "/home/build/public/eng/elisp/google.el")
-(setq p4-use-p4config-exclusively t)
-
-(require 'rotate-among-files)
-
-(define-key global-map [?\C-\;] 'google-rotate-among-files)
-
-;; For google-maybe-show-trailing-whitespace
-(setq google-trailing-whitespace-modes
-      (cons 'protobuf-mode
-            google-trailing-whitespace-modes))
-
-(set-face-background 'trailing-whitespace "yellow2")
-
-(defvar citc-path (concat "/google/src/cloud/" user-login-name "/"))
-
-(defun citc-client-name (path)
-  (if (string-prefix-p citc-path path)
-      (let ((segments (split-string path "/")))
-	(nth 5 segments))
-    nil))
-
-(defun google3-dir (path)
-  (if (string-match "/google3/\\(.*\\)/.*" path)
-      (concat "//" (match-string 1 path))
-    ""))
-
-
-;; Turning g4d aliases into environment variables, for find-file.
-(defun g4d-aliases-to-env-vars ()
-    (let ((loading-buffer (find-file-noselect "~/.g4d")))
-      (with-current-buffer loading-buffer
-	(goto-char (point-min))
-	(while (< (point) (point-max))
-	  (let* ((line (buffer-substring (point) (save-excursion (end-of-line) (point))))
-		 (words (delete "" (split-string line "[ \t]+"))))
-	    (when (and (= (length words) 3) (equal (car words) "alias"))
-	      (let* ((var (substring (nth 1 words) 1))
-		     (val (substring (nth 2 words) 1)))
-		(setenv var val)))
-	    (forward-line 1)))
-      (kill-buffer loading-buffer))))
-
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -536,8 +487,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Go mode.
 
-(require 'google-go)
-
 (setq gofmt-command "goimports")
 
 (add-hook 'go-mode-hook
@@ -604,19 +553,6 @@
                     (format "%s (default: %s): " prompt-prefix default)
                   (format "%s: " prompt-prefix))))
     (read-string prompt nil nil default)))
-
-
-(defvar google3-package-alist
-  '(("context"	"go/context/context")
-    ("creds"	"security/credentials/go/creds")
-    ("proto"	"net/proto2/go/proto")
-    ("rpc"	"net/rpc/go/rpc")
-    ("rpcprod"	"net/rpc/go/rpcprod")
-    ("google"   "base/go/google")
-    ("log"	"base/go/log")
-    ("runfiles" "base/go/runfiles")
-    ("flag"	"base/go/flag")
-    ))
 
 
 
@@ -758,10 +694,6 @@
 (setq emacs-lisp-mode-hook
       '(lambda ()
          (jba-setup-font-lock-mode)))
-
-(defun glaze ()
-  (interactive)
-  (shell-command "glaze" nil nil))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1895,10 +1827,3 @@
        (bc-previous))))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(setq borg-mode-hook
-      '(lambda ()
-	 (define-key c-mode-map "\C-c\C-l" 'goto-line)))
-
-(g4d-aliases-to-env-vars)

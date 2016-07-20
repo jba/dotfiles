@@ -8,5 +8,3 @@ alias telldone='echo "Done.";xmessage -nearmouse done'
 
 alias train='curl -s -d "at=&o=1&d=110&t=01%2F04%2F2013&c=1&s=AM"  http://as0.mta.info/mnr/schedules/sched_results.cfm | html2text | awk "/Departs/ {p=1} p==1"'
 
-alias http_get_qa='curl -s -H "Authorization: Bearer \$TOKEN" -H "X-GFE-SSL: yes" http://qa-source.sandbox.googleapis.com/v1/projects/$JBA_PROJECT/repos/default'
-

@@ -45,7 +45,6 @@ case "$TERM" in
 xterm*|rxvt*)
     #PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
     PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\w\a\]$PS1"
-    PS2='>> '
     ;;
 *)
     ;;
@@ -69,11 +68,6 @@ alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
 
-# Alias definitions.
-# You may want to put all your additions into a separate file like
-# ~/.bash_aliases, instead of adding them here directly.
-# See /usr/share/doc/bash-doc/examples in the bash-doc package.
-
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
@@ -81,6 +75,11 @@ fi
 if [ -f ~/.bash_env ]; then
     . ~/.bash_env
 fi
+
+if [ -f ~/.bash_functions ]; then
+    . ~/.bash_functions
+fi
+
 
 
 # enable programmable completion features (you don't need to enable
@@ -96,11 +95,6 @@ fi
 # Don't exit on ^D
 IGNOREEOF=100
 
-
-# Display a window title.
-function title {
-  echo -e "\e]0;$1\a"
-}
 
 ### History tweaks.
 
@@ -139,7 +133,40 @@ function tildify () {
   fi
 }
   
+# Get the path below the google3 directory, or the empty
+# string if we're not under google3.
+function sub_google3_dir () {
+  local dir=${PWD#/*google3/}
+  if [[ $dir == $PWD ]]; then
+    echo ""
+  else
+    echo $dir
+  fi
+}
 
+# What the path part of the prompt should be.
+function prompt_path () {
+  local dir=$(sub_google3_dir)
+  if [[ $dir != "" ]]; then
+    echo "//$dir"
+  elif [[ $(basename $PWD) == "google3" ]]; then
+    echo google3
+  else
+    echo $(tildify $PWD)
+  fi
+}
+  
+# Get the path of the blaze-bin directory corresponding 
+# to the current directory.
+function blaze_bin_dir () {
+  local dir=$(sub_google3_dir)
+  if [[ $dir == "" ]]; then
+    echo ""
+  else
+    local prefix=${PWD%$dir}
+    echo ${prefix}blaze-bin/${dir}
+  fi
+}
 
 function tmux_prompt() {
   if [[ $TMUX == "" ]]; then
@@ -149,14 +176,34 @@ function tmux_prompt() {
   fi
 }
 
+# Find a compact display of a directory, using knowledge about citc and g4d
+# aliases. In fact, the return value should be a valid argument to g4d.
+
+function citc_client () {
+  local path="$1"
+  local a="${path##/google/src/cloud/$LOGNAME}"
+  if [[ "$a" == "$path" || "$a" == "" ]]; then
+    return 1
+  else
+    local b=${a##/}
+    echo ${b%%/*}
+  fi
+}
 
 ### Prompt.
+
+# Abbreviate some parts of the path as it appears in the prompt.
+# Obsoleted by citc stuff below.
+#PROMPT_COMMAND='history -w; SPWD=$(echo $PWD | sed -e /.\\\{30,\\\}/s/google3/G3/ -e s/contentads/CA/ -e s/yield_management/YM/ -e s@$HOME@~@ -e s@/google/src/cloud/jba@\$CITC@)'
 
 export BB G3
 
 PROMPT_COMMAND='
         history -a
-        GIT_BRANCH=$(git symbolic-ref HEAD 2> /dev/null | sed 's@refs/heads/@@')
+        BB=$(blaze_bin_dir)
+        if [[ ${PWD:(-8)} == "/google3" ]]; then G3=$PWD; else G3=${PWD%/google3/*}/google3; fi
+        CITC_CLIENT=$(citc_client $PWD)
+        GIT_BRANCH=$(git symbolic-ref --short HEAD 2> /dev/null || git show-ref -s HEAD 2> /dev/null)
         if [[ $GIT_BRANCH != "" && $(git status --porcelain) != "" ]]; then
           GIT_BRANCH=${GIT_BRANCH}'*'
         fi
@@ -171,7 +218,21 @@ if [ "$color_prompt" = yes ]; then
     cyan='\[\033[01;36m\]'
     white='\[\033[00m\]'
 fi
-PS1='${debian_chroot:+($debian_chroot)}'$green'\u@\h'$yellow'${GIT_BRANCH:+ git:$GIT_BRANCH}'$blue' $(prompt_path)\n'$red'$(tmux_prompt)'$white'> '
+PS1='${debian_chroot:+($debian_chroot)}'$green'\u@\h'$yellow'${CITC_CLIENT:+ citc:$CITC_CLIENT}${GIT_BRANCH:+ git:$GIT_BRANCH}'$blue' $(prompt_path)\n'$red'$(tmux_prompt)'$white'> '
+
+PS2='>> '
 
 unset color_prompt force_color_prompt red green yellow blue magenta cyan white
 
+#PROMPT_DIRTRIM=4
+
+#PS1=${PS1//\\w/\$SPWD}
+
+
+
+
+# The next line updates PATH for the Google Cloud SDK.
+source '/usr/local/google/home/jba/Downloads/google-cloud-sdk/path.bash.inc'
+
+# The next line enables shell command completion for gcloud.
+source '/usr/local/google/home/jba/Downloads/google-cloud-sdk/completion.bash.inc'

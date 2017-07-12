@@ -1,3 +1,9 @@
+;; Added by Package.el.  This must come before configurations of
+;; installed packages.  Don't delete this line.  If you don't want it,
+;; just comment it out by adding a semicolon to the start of the line.
+;; You may delete these explanatory comments.
+(package-initialize)
+
 (message "Loading jba's .emacs...")
 
 ;; Search for "dot-emacs" in my email to find old and/or obsolete stuff.
@@ -18,6 +24,8 @@
                           )))
 
 
+(dolist (shellfile '(".bashrc" ".bash_env" ".bash_aliases"))
+  (add-to-list 'auto-mode-alist (cons (concat "\\" shellfile) 'shell-script-mode)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Appearance.
@@ -49,11 +57,11 @@
   (balance-windows))
 
 
-(defvar jba-mode-line-format
+(setq jba-mode-line-format
   (list
    mode-line-modified " "
    mode-line-buffer-identification
-   " [" '(:eval (citc-client-name buffer-file-name)) "] "
+   " [" '(:eval (or (citc-client-name buffer-file-name) (magit-get-current-branch))) "] "
    '(:eval (google3-dir buffer-file-name)) " "
    mode-line-position
    mode-line-modes))
@@ -63,7 +71,56 @@
 			     (setq mode-line-format jba-mode-line-format)))
 
 
-(setq-default fill-column 79)
+(setq-default fill-column 85)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Google-specific.
+
+(require 'google)
+
+;(load-file "/home/build/public/eng/elisp/google.el")
+(setq p4-use-p4config-exclusively t)
+
+(require 'rotate-among-files)
+
+(define-key global-map [?\C-\;] 'google-rotate-among-files)
+
+;; For google-maybe-show-trailing-whitespace
+(setq google-trailing-whitespace-modes
+      (cons 'protobuf-mode
+            google-trailing-whitespace-modes))
+
+(set-face-background 'trailing-whitespace "yellow2")
+
+(defvar citc-path (concat "/google/src/cloud/" user-login-name "/"))
+
+(defun citc-client-name (path)
+  (if (string-prefix-p citc-path path)
+      (let ((segments (split-string path "/")))
+	(nth 5 segments))
+    nil))
+
+(defun google3-dir (path)
+  (if (string-match "/google3/\\(.*\\)/.*" path)
+      (concat "//" (match-string 1 path))
+    ""))
+
+
+;; Turning g4d aliases into environment variables, for find-file.
+(defun g4d-aliases-to-env-vars ()
+    (let ((loading-buffer (find-file-noselect "~/.g4d")))
+      (with-current-buffer loading-buffer
+	(goto-char (point-min))
+	(while (< (point) (point-max))
+	  (let* ((line (buffer-substring (point) (save-excursion (end-of-line) (point))))
+		 (words (delete "" (split-string line "[ \t]+"))))
+	    (when (and (= (length words) 3) (equal (car words) "alias"))
+	      (let* ((var (substring (nth 1 words) 1))
+		     (val (substring (nth 2 words) 1)))
+		(setenv var val)))
+	    (forward-line 1)))
+      (kill-buffer loading-buffer))))
+
 
 
 
@@ -114,11 +171,13 @@
   (revert-buffer nil t))
 
 
-;(read-abbrev-file)
+(read-abbrev-file)
 
 ;; For dabbrev expansion
 (setq case-replace nil)
 (setq dabbrev-case-fold-search nil)
+
+(setq tags-case-fold-search nil)
 
 (require 'ido)
 (ido-mode)
@@ -487,17 +546,114 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Go mode.
 
+(require 'google-go)
+
 (setq gofmt-command "goimports")
 
-(add-hook 'go-mode-hook
-	  (lambda ()
-	     (setq tab-width 4)
-	     (jba-setup-font-lock-mode)
-	     (define-key go-mode-map "\M-z" 'jba-compile)
-	     (define-key go-mode-map "" 'jba-godoc)
-	     (define-key go-mode-map "}" #'go-mode-insert-and-indent)
-	     (define-key go-mode-map  [?\C-\\] #'jba-go-switch-to-other-source-file)
-	     ))
+(add-hook 'go-mode-hook 'jba-go-mode)
+
+(defun jba-go-mode ()
+  (setq tab-width 4)
+  (jba-setup-font-lock-mode)
+  (define-key go-mode-map "\M-z" 'jba-compile)
+  (define-key go-mode-map "" 'jba-godoc)
+  (define-key go-mode-map "{" #'jba-go-open-brace)
+  (define-key go-mode-map "}" #'go-mode-insert-and-indent)
+  (define-key go-mode-map  [?\C-\\] #'jba-go-switch-to-other-source-file)
+  (define-key go-mode-map  "\C-c\C-t" #'jba-go-test)
+  (define-key go-mode-map "\M-\?" #'jba-go-grep-symbol)
+  (define-key go-mode-map  "\C-c\C-e"
+    #'(lambda () (interactive)
+	(insert "if err != nil { log.Fatal(err) }")
+	(newline-and-indent)))
+  (setq hippie-expand-try-functions-list
+	'(jba-try-expand-skeleton
+	  try-expand-dabbrev
+	  try-expand-all-abbrevs
+	  try-expand-dabbrev-all-buffers
+	  try-expand-dabbrev-from-kill
+	  try-complete-file-name-partially
+	  try-complete-file-name
+	  ;try-expand-list  (too aggressive for me)
+	  ;try-expand-line
+	  try-complete-lisp-symbol-partially
+	  try-complete-lisp-symbol)))
+
+(defun jba-expand-skel-string (s abbrev-table)
+  (let* ((sym (abbrev-symbol s abbrev-table))
+	 (func (symbol-function sym)))
+    (and func (funcall func))))
+
+
+(defun jba-try-expand-skeleton (old)
+  (if old
+      nil
+    (he-init-string (he-dabbrev-beg) (point))
+    (if (or (jba-expand-skel-string he-search-string local-abbrev-table)
+	    (jba-expand-skel-string he-search-string global-abbrev-table))
+	(progn
+	  (he-substitute-string "")
+	  t))))
+
+
+
+(defun jba-go-open-brace ()
+  (interactive)
+  (expand-abbrev)
+  (backward-char)
+  (cond
+   ((looking-at " ")
+    (forward-char)
+    (insert "{")
+    (newline-and-indent))
+   ((looking-at ")")
+    (forward-char)
+    (insert " {")
+    (newline-and-indent))
+   (t
+    (forward-char)
+    (insert "{"))))
+
+
+(define-skeleton go-skeleton-test
+  "a Go unit test"
+  nil
+  "func Test"
+  _
+  "(t *testing.T) {\n"
+  >
+  "t.SkipNow()\n}"
+  )
+
+(define-skeleton go-skeleton-if-err-return
+  "return on error"
+  nil
+  "if err != nil {\n"
+  >
+  "return " _ "err\n"
+  > -1 "}"
+  )
+
+(define-skeleton go-skeleton-if-log-fatal
+  "log fatal on error"
+  nil
+  "if err != nil {\n"
+  >
+  "log.Fatal(err)\n"
+  > -1 "}"
+  )
+
+(defun jba-go-grep-symbol (sym)
+  (interactive (jba-symbol-at-point))
+  (grep (concat "grep --color -nH '\\<" sym "\\>' *.go"))
+)
+
+(defun jba-symbol-at-point ()
+  (let* ((bounds (bounds-of-thing-at-point 'symbol))
+         (default (buffer-substring-no-properties (car bounds) (cdr bounds))))
+    (if (string-equal default "")
+        (setq default nil))
+    (list (read-string-with-default "Symbol" default))))
 
 
 
@@ -516,6 +672,15 @@
                                nil t)
            (forward-char)
          (goto-char (point-min)))))
+
+(defun jba-go-test (prefix)
+  (interactive "P")
+  (save-some-buffers t) ; save all buffers w/o prompting
+  (let ((cmd "go test -v"))
+    (if prefix
+	(setq cmd (concat cmd " -short")))
+    (setq compile-command cmd)
+    (compile compile-command)))
 
 
 (defun jba-godoc (package symbol)
@@ -553,6 +718,19 @@
                     (format "%s (default: %s): " prompt-prefix default)
                   (format "%s: " prompt-prefix))))
     (read-string prompt nil nil default)))
+
+
+(defvar google3-package-alist
+  '(("context"	"go/context/context")
+    ("creds"	"security/credentials/go/creds")
+    ("proto"	"net/proto2/go/proto")
+    ("rpc"	"net/rpc/go/rpc")
+    ("rpcprod"	"net/rpc/go/rpcprod")
+    ("google"   "base/go/google")
+    ("log"	"base/go/log")
+    ("runfiles" "base/go/runfiles")
+    ("flag"	"base/go/flag")
+    ))
 
 
 
@@ -694,6 +872,10 @@
 (setq emacs-lisp-mode-hook
       '(lambda ()
          (jba-setup-font-lock-mode)))
+
+(defun glaze ()
+  (interactive)
+  (shell-command "glaze" nil nil))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1827,3 +2009,53 @@
        (bc-previous))))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(setq borg-mode-hook
+      '(lambda ()
+	 (define-key c-mode-map "\C-c\C-l" 'goto-line)))
+
+(g4d-aliases-to-env-vars)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Magit.
+
+(require 'magit)
+
+(global-set-key  "\C-c\C-m" #'magit-status)
+(global-set-key  "\C-c\C-b" '(lambda ()
+			       (interactive)
+			       (let ((default-directory (magit-get-top-dir))
+				     (magit-uninteresting-refs (cons "^refs/tags"
+								     magit-uninteresting-refs)))
+				 (call-interactively #'magit-checkout))))
+
+;; (dolist (face '(magit-tag magit-log-head-label-tags magit-log-reflog-label-commit
+;; 			  magit-log-head-label-bisect-skip
+;; 			  magit-log-reflog-label-merge magit-log-reflog-label-amend))
+;;   (set-face-background face nil))
+
+(setq magit-last-seen-setup-instructions "1.4.0")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun camel-case-identifier-at-point ()
+  (interactive)
+  (let ((bounds (bounds-of-thing-at-point 'symbol)))
+    (if (null bounds)
+	(error "no symbol at point"))
+    (let ((cw (camel-case-identifier (buffer-substring (car bounds) (cdr bounds)))))
+      (delete-region (car bounds) (cdr bounds))
+      (insert cw))))
+
+(defun camel-case-identifier (id)
+  (apply #'concat (mapcar #'capitalize (split-string id "_"))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Hippie-expand.
+
+;;; Source at https://github.com/emacs-mirror/emacs/blob/emacs-25/lisp/hippie-exp.el.
+
+(setq hippie-expand-verbose t)
+
+(global-set-key "\M-/" 'hippie-expand)

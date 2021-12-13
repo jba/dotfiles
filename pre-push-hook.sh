@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -ex
+
+go test ./...
+misspell .
+staticcheck ./...
+unparam ./...
+docker run -v $PWD:/src -w /src golang:1.16 go test
